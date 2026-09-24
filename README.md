@@ -31,6 +31,27 @@ On top of that, two failure modes schedulers cannot see at all:
   that never happened, and re-run it.
 - **Degradation.** Identical output N runs in a row means the job is alive and useless.
 
+## The pillar cron leaves empty
+
+Security teams split a posture into three pillars. Protection stops the bad thing. Detection tells
+you it happened anyway. Response is what you do about it.
+
+Cron looks like it covers detection, which is why the gap is easy to miss. You get one signal, the
+exit code, and it reports rather than prevents, so it feels like detection. The catch is where it
+comes from. The job produces it. Your agent grades its own homework and hands you the grade.
+
+A health check on the box doesn't close that. It watches whether the process is alive. It never
+reads what the job wrote. Both signals are about liveness, and a lying agent is perfectly alive.
+
+Real detection has to look at the work. That's the pillar Vigil fills: checks that run outside the
+job, against what it produced rather than how it exited. Give a job checks and a run has to agree
+with them to come back `verified`. Declare a job with no checks and you're back to cron, because
+there's nothing for the claim to disagree with.
+
+Response is still mostly yours. If Vigil runs the job and you set `catchup = true`, it'll re-run a
+window that nothing covered. Watched jobs are excluded, since Vigil can't re-run a command it was
+never given. Everything past that is a decision only you can make.
+
 ## The 60-second version
 
 ```
