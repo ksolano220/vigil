@@ -11,7 +11,7 @@ from pathlib import Path
 
 from vigil import runner
 from vigil.checks import CheckContext, run_check
-from vigil.schedule import missed_windows, next_due
+from vigil.schedule import expected_windows, missed_windows, next_due
 from vigil.store import Store
 
 VERIFIED = "verified"
@@ -68,6 +68,8 @@ class Supervisor:
 
     def run_job(self, name: str, catchup_for: datetime | None = None, notify: bool = True) -> dict:
         job = self.config.job(name)
+        if job.watch_only:
+            raise ValueError(f"job {name!r} has no command; it is watched, not run")
         self.store.job_state(name, created_at=self._now())
         execution = runner.execute(job, self.config.root, catchup_for)
 
@@ -109,6 +111,48 @@ class Supervisor:
         self.store.save()
         return record
 
+    def evaluate(self, name: str, notify: bool = True) -> dict | None:
+        """Watch mode: check the artifact of a job Vigil does not run itself."""
+        job = self.config.job(name)
+        state = self.store.job_state(name, created_at=self._now())
+        anchor = self.store.covered_through(name) or datetime.fromisoformat(state["created_at"])
+        closed = [w for w in expected_windows(job, anchor, self._now())
+                  if w + job.grace_delta <= self._now()]
+        if not closed:
+            return None
+
+        window = closed[-1]
+        results = []
+        for index, check in enumerate(job.checks):
+            ctx = CheckContext(
+                job=job, claim={}, stdout="", store=self.store, root=self.config.root,
+                started_at=window, now=self._now(), key=f"{index}:{check.type}", reference=window,
+            )
+            results.append(run_check(check, ctx))
+
+        verdict = VERIFIED if all(r.ok for r in results) else UNVERIFIED
+        record = {
+            "started_at": window.isoformat(),
+            "finished_at": self._now().isoformat(),
+            "duration_seconds": 0.0,
+            "exit_code": None,
+            "timed_out": False,
+            "verdict": verdict,
+            "claim": {},
+            "fingerprint": "",
+            "checks": [r.as_dict() for r in results],
+            "catchup_for": None,
+            "watched": True,
+            "stderr_tail": "",
+            "degraded": False,
+        }
+        self.store.record_run(name, record)
+        self.store.cover_through(name, window)
+        if notify:
+            self._maybe_alert(job, record)
+        self.store.save()
+        return record
+
     def _verify(self, job, execution) -> list:
         results = []
         for index, check in enumerate(job.checks):
@@ -139,8 +183,10 @@ class Supervisor:
         last = self.store.last_run(name)
         anchor = self.store.covered_through(name)
         covered = self.store.covered(name)
-        open_windows = [w for w in missed_windows(job, anchor, created_at, self._now())
-                        if w.isoformat() not in covered]
+        open_windows = [] if job.watch_only else [
+            w for w in missed_windows(job, anchor, created_at, self._now())
+            if w.isoformat() not in covered
+        ]
         return JobStatus(
             job=job,
             last_run=last,
@@ -152,6 +198,9 @@ class Supervisor:
 
     def scan(self, notify: bool = True) -> list[Problem]:
         problems = []
+        for name, job in self.config.jobs.items():
+            if job.watch_only:
+                self.evaluate(name, notify=False)
         for name in self.config.jobs:
             status = self.status(name)
             if status.missed:
@@ -175,7 +224,7 @@ class Supervisor:
         result = CatchupResult()
         for name in self.config.jobs:
             job = self.config.job(name)
-            if not job.catchup:
+            if not job.catchup or job.watch_only:
                 continue
             windows = self.status(name).missed
             if not windows:

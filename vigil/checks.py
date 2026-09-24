@@ -32,16 +32,21 @@ class CheckContext:
     started_at: datetime
     now: datetime
     key: str
+    reference: datetime | None = None
 
 
-def _resolve(root: Path, raw: str) -> Path:
-    path = Path(str(raw)).expanduser()
+def _resolve(root: Path, raw: str, reference: datetime | None = None) -> Path:
+    """Expands strftime codes, so 'briefings/%Y-%m-%d.md' points at the right day."""
+    text = str(raw)
+    if "%" in text:
+        text = (reference or datetime.now().astimezone()).strftime(text)
+    path = Path(text).expanduser()
     return path if path.is_absolute() else (root / path)
 
 
 def check_file_changed(options: dict, ctx: CheckContext) -> CheckResult:
     """The file's mtime moved recently, so something actually wrote to it."""
-    path = _resolve(ctx.root, options["path"])
+    path = _resolve(ctx.root, options["path"], ctx.reference)
     within = parse_duration(options.get("within", "1h"))
     if not path.exists():
         return CheckResult("file_changed", False, f"{path} does not exist")
@@ -53,7 +58,7 @@ def check_file_changed(options: dict, ctx: CheckContext) -> CheckResult:
 
 
 def check_file_nonempty(options: dict, ctx: CheckContext) -> CheckResult:
-    path = _resolve(ctx.root, options["path"])
+    path = _resolve(ctx.root, options["path"], ctx.reference)
     minimum = int(options.get("min_bytes", 1))
     if not path.exists():
         return CheckResult("file_nonempty", False, f"{path} does not exist")

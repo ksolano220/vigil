@@ -235,6 +235,83 @@ class TestSupervisor(unittest.TestCase):
         self.assertIn("unknown check type", record["checks"][0]["detail"])
 
 
+class TestWatchMode(unittest.TestCase):
+    """A job Vigil does not run: it checks the artifact the job should have left."""
+
+    WATCH = """
+        [jobs.w]
+        at = ["08:00"]
+        grace = "1h"
+        [[jobs.w.checks]]
+        type = "file_nonempty"
+        path = "out/%Y-%m-%d.md"
+        min_bytes = 10
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        config = load_config(write_config(self.root, self.WATCH))
+        self.supervisor = Supervisor(config, store=Store(config.resolved_state_path()))
+        # Vigil starts watching when it is installed, so seed that moment first.
+        self.base = datetime.now().astimezone().replace(hour=0, minute=1, second=0, microsecond=0)
+        self.supervisor.store.job_state("w", created_at=self.base)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _at(self, **offset):
+        self.supervisor._now = lambda: self.base + timedelta(**offset)
+
+    def _write_artifact(self, when, text="plenty of bytes here"):
+        (self.root / "out").mkdir(exist_ok=True)
+        (self.root / "out" / f"{when:%Y-%m-%d}.md").write_text(text, encoding="utf-8")
+
+    def test_watch_only_job_needs_no_command(self):
+        self.assertTrue(self.supervisor.config.job("w").watch_only)
+
+    def test_running_a_watched_job_is_refused(self):
+        with self.assertRaises(ValueError):
+            self.supervisor.run_job("w")
+
+    def test_nothing_to_say_before_the_window_closes(self):
+        self._at(hours=1)
+        self.assertIsNone(self.supervisor.evaluate("w"))
+
+    def test_missing_artifact_is_unverified(self):
+        self._at(hours=10)
+        record = self.supervisor.evaluate("w")
+        self.assertEqual(record["verdict"], UNVERIFIED)
+        self.assertIsNone(record["exit_code"])
+
+    def test_dated_path_resolves_against_the_window(self):
+        self._write_artifact(self.base)
+        self._at(hours=10)
+        self.assertEqual(self.supervisor.evaluate("w")["verdict"], VERIFIED)
+
+    def test_yesterdays_artifact_does_not_verify_today(self):
+        """The whole point of a dated path: a stale file is not today's run."""
+        self._write_artifact(self.base - timedelta(days=1))
+        self._at(hours=10)
+        self.assertEqual(self.supervisor.evaluate("w")["verdict"], UNVERIFIED)
+
+    def test_an_empty_artifact_does_not_verify(self):
+        self._write_artifact(self.base, text="hi")
+        self._at(hours=10)
+        self.assertEqual(self.supervisor.evaluate("w")["verdict"], UNVERIFIED)
+
+    def test_each_window_is_evaluated_once(self):
+        self._at(hours=10)
+        self.assertIsNotNone(self.supervisor.evaluate("w"))
+        self.assertIsNone(self.supervisor.evaluate("w"))
+
+    def test_watched_jobs_report_no_missed_windows(self):
+        self._at(days=3)
+        kinds = {p.kind for p in self.supervisor.scan(notify=False)}
+        self.assertNotIn("missed", kinds)
+        self.assertIn(UNVERIFIED, kinds)
+
+
 class TestStore(unittest.TestCase):
     def test_survives_a_corrupt_file(self):
         with tempfile.TemporaryDirectory() as tmp:

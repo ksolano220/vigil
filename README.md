@@ -136,6 +136,34 @@ echo "VIGIL_CLAIM: {\"rows\": $count}"
 A job that files no claim still gets checked. The claim just gives the checks something to test and
 gives degradation something to fingerprint.
 
+### Watching a job you don't want to wrap
+
+Wrapping every job on day one is a bad trade: you rewrite a working crontab to install a tool you
+have not seen work yet. So a job can be declared with **no command at all**. Vigil never runs it. It
+learns when the job is supposed to finish and checks the artifact the job should have left behind.
+
+```toml
+[jobs.morning_briefing]
+at = ["08:03"]
+grace = "4h"
+
+[[jobs.morning_briefing.checks]]
+type = "file_nonempty"
+path = "~/briefings/%Y-%m-%d.md"
+min_bytes = 2000
+```
+
+Paths take `strftime` codes and resolve against the window being checked, not against today, so
+`%Y-%m-%d` means "the file that run was supposed to write" and a stale file from yesterday does not
+count as today's run.
+
+This is how you adopt it without touching anything: point it at what your jobs already produce, let
+it watch for a week, then wrap the ones worth wrapping. It also covers jobs you cannot wrap, like
+something running on a box you do not control.
+
+The trade is real and worth knowing: a watched job proves the artifact, not the run. If a job writes
+its file and then fails, watching alone calls that verified. Wrapping catches it.
+
 ### Checks
 
 | type | proves | options |
@@ -214,6 +242,10 @@ a watchdog.
 
 **No database.** State is one JSON file you can read, diff, commit or delete. Written atomically,
 and a corrupt file degrades to an empty history instead of a crash.
+
+**Schedules are declared, not discovered.** Vigil reads its own copy of the schedule, which is what
+lets it notice a run that never happened. Cron knows the schedule too, but keeps no record of
+whether it fired. Vigil keeps the schedule and the receipts in the same file.
 
 **Checks run outside the job.** A job cannot verify itself for the same reason a witness cannot
 alibi themselves. If the check imports the agent's own code, it is a claim wearing a lab coat.

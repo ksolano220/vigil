@@ -21,7 +21,7 @@ class Check:
 @dataclass
 class Job:
     name: str
-    command: str
+    command: str | None = None
     every: str | None = None
     at: list[str] = field(default_factory=list)
     grace: str = "1h"
@@ -44,6 +44,11 @@ class Job:
     @property
     def timeout_seconds(self) -> float:
         return parse_duration(self.timeout).total_seconds()
+
+    @property
+    def watch_only(self) -> bool:
+        """No command means Vigil checks the artifact without running anything."""
+        return not self.command
 
     @property
     def schedule_label(self) -> str:
@@ -100,8 +105,8 @@ def load_config(path: str | Path | None = None) -> Config:
 
 
 def _build_job(name: str, body: dict) -> Job:
-    if "command" not in body:
-        raise ValueError(f"job {name!r} has no command")
+    if "command" not in body and not body.get("checks"):
+        raise ValueError(f"job {name!r} needs a command, or checks to watch it by")
     at = [str(t) for t in body.get("at", [])]
     for text in at:
         parse_clock(text)
@@ -110,7 +115,7 @@ def _build_job(name: str, body: dict) -> Job:
 
     job = Job(
         name=name,
-        command=body["command"],
+        command=body.get("command"),
         every=body.get("every"),
         at=at,
         grace=body.get("grace", "1h"),
