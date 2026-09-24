@@ -1,0 +1,26 @@
+# Compressed schedule so the whole story runs in a few seconds.
+[jobs.digest]
+command = "python3 agent.py"
+every = "1s"
+grace = "1s"
+catchup = true
+max_catchup = 2
+degrade_after = 3
+
+# Naive check. Passes every run, which is exactly the trap.
+[[jobs.digest.checks]]
+type = "file_changed"
+path = "out/digest.md"
+within = "1m"
+
+# The file is written, but written with nothing in it.
+[[jobs.digest.checks]]
+type = "file_nonempty"
+path = "out/digest.md"
+min_bytes = 120
+
+# The agent's own number, held against it.
+[[jobs.digest.checks]]
+type = "claim_field"
+field = "items"
+min = 1
