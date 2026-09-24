@@ -15,6 +15,24 @@ There is no record of it. A job that didn't run leaves no log line saying it did
 Schedulers answer "did the process exit cleanly." That was the right question when the process was
 `rsync`. It is the wrong question when the process is an agent whose entire output is judgment.
 
+## Cron is protection. Vigil is detection.
+
+Security teams split a posture into three pillars. Protection keeps the bad thing from happening.
+Detection tells you when it happened anyway. Response is what you do about it. Protection has
+always been the easiest to fund, because you can buy it, point at it, and when it works nothing
+happens.
+
+Every scheduling feature you already have is protection. Retries, timeouts, a non-zero exit code,
+a health check on the box. All of it exists to keep a run from going wrong.
+
+None of it is detection, because the job is the only thing reporting on the job. A run that lies
+passes every one of those checks. Detection has to come from outside the process: evidence
+gathered independently, then compared against what the job claimed.
+
+That is the pillar Vigil fills. It will not stop your agent from breaking. It makes sure a broken
+agent cannot keep reporting success. Response stays yours, though catch-up covers the simplest
+case by re-running the window that nothing covered.
+
 ## What Vigil does
 
 Vigil sits around the job, not inside it, and separates two things that scheduling tools conflate:
