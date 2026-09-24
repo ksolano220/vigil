@@ -305,6 +305,13 @@ class TestWatchMode(unittest.TestCase):
         self.assertIsNotNone(self.supervisor.evaluate("w"))
         self.assertIsNone(self.supervisor.evaluate("w"))
 
+    def test_a_new_watch_is_watching_not_missed(self):
+        """Nothing has closed yet, so the job is new, not broken."""
+        self._at(hours=1)
+        status = self.supervisor.status("w")
+        self.assertEqual(status.verdict, "watching")
+        self.assertTrue(status.healthy)
+
     def test_watched_jobs_report_no_missed_windows(self):
         self._at(days=3)
         kinds = {p.kind for p in self.supervisor.scan(notify=False)}

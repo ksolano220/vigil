@@ -19,6 +19,7 @@ UNVERIFIED = "unverified"
 FAILED = "failed"
 MISSED = "missed"
 DEGRADED = "degraded"
+WATCHING = "watching"
 
 BAD_VERDICTS = {UNVERIFIED, FAILED}
 
@@ -55,6 +56,8 @@ class JobStatus:
 
     @property
     def healthy(self) -> bool:
+        if self.verdict == WATCHING:
+            return True
         return self.verdict == VERIFIED and not self.degraded and not self.missed
 
 
@@ -190,7 +193,7 @@ class Supervisor:
         return JobStatus(
             job=job,
             last_run=last,
-            verdict=last["verdict"] if last else MISSED,
+            verdict=last["verdict"] if last else (WATCHING if job.watch_only else MISSED),
             degraded=bool(last and last.get("degraded")),
             missed=open_windows,
             next_due=next_due(job, anchor, self._now()),

@@ -10,9 +10,9 @@ from pathlib import Path
 
 from vigil import __version__
 from vigil.config import DEFAULT_CONFIG_NAME, load_config
-from vigil.supervisor import DEGRADED, FAILED, MISSED, UNVERIFIED, VERIFIED, Supervisor
+from vigil.supervisor import DEGRADED, FAILED, MISSED, UNVERIFIED, VERIFIED, WATCHING, Supervisor
 
-MARKS = {VERIFIED: "ok", UNVERIFIED: "??", FAILED: "xx", MISSED: "--", DEGRADED: "~~"}
+MARKS = {VERIFIED: "ok", UNVERIFIED: "??", FAILED: "xx", MISSED: "--", DEGRADED: "~~", WATCHING: ".."}
 
 STARTER = '''# vigil.toml
 # notify = "./notify.sh"   # gets a JSON problem report on stdin
@@ -138,6 +138,8 @@ def _status(supervisor: Supervisor, args) -> int:
     width = max((len(r["job"]) for r in rows), default=3)
     for row in rows:
         stamp = _short(row["last_run"]) if row["last_run"] else "never"
+        if row["verdict"] == WATCHING:
+            stamp = "no window yet"
         mark = MARKS.get(row["verdict"], "??")
         line = f"[{mark}] {row['job']:<{width}}  {stamp:<12}  {row['verdict']}"
         if row["missed"]:
