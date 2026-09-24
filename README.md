@@ -15,24 +15,6 @@ There is no record of it. A job that didn't run leaves no log line saying it did
 Schedulers answer "did the process exit cleanly." That was the right question when the process was
 `rsync`. It is the wrong question when the process is an agent whose entire output is judgment.
 
-## Cron is protection. Vigil is detection.
-
-Security teams split a posture into three pillars. Protection keeps the bad thing from happening.
-Detection tells you when it happened anyway. Response is what you do about it. Protection has
-always been the easiest to fund, because you can buy it, point at it, and when it works nothing
-happens.
-
-Every scheduling feature you already have is protection. Retries, timeouts, a non-zero exit code,
-a health check on the box. All of it exists to keep a run from going wrong.
-
-None of it is detection, because the job is the only thing reporting on the job. A run that lies
-passes every one of those checks. Detection has to come from outside the process: evidence
-gathered independently, then compared against what the job claimed.
-
-That is the pillar Vigil fills. It will not stop your agent from breaking. It makes sure a broken
-agent cannot keep reporting success. Response stays yours, though catch-up covers the simplest
-case by re-running the window that nothing covered.
-
 ## What Vigil does
 
 Vigil sits around the job, not inside it, and separates two things that scheduling tools conflate:
@@ -48,6 +30,27 @@ On top of that, two failure modes schedulers cannot see at all:
 - **Missed windows.** Vigil knows when the job was supposed to run, so it can tell you about a run
   that never happened, and re-run it.
 - **Degradation.** Identical output N runs in a row means the job is alive and useless.
+
+## The pillar cron leaves empty
+
+Security teams split a posture into three pillars. Protection stops the bad thing. Detection tells
+you it happened anyway. Response is what you do about it.
+
+Cron looks like it covers detection, which is why the gap is easy to miss. You get one signal, the
+exit code, and it reports rather than prevents, so it feels like detection. The catch is where it
+comes from. The job produces it. Your agent grades its own homework and hands you the grade.
+
+A health check on the box doesn't close that. It watches whether the process is alive. It never
+reads what the job wrote. Both signals are about liveness, and a lying agent is perfectly alive.
+
+Real detection has to look at the work. That's the pillar Vigil fills: checks that run outside the
+job, against what it produced rather than how it exited. Give a job checks and a run has to agree
+with them to come back `verified`. Declare a job with no checks and you're back to cron, because
+there's nothing for the claim to disagree with.
+
+Response is still mostly yours. If Vigil runs the job and you set `catchup = true`, it'll re-run a
+window that nothing covered. Watched jobs are excluded, since Vigil can't re-run a command it was
+never given. Everything past that is a decision only you can make.
 
 ## The 60-second version
 
